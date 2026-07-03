@@ -29,7 +29,7 @@ public class EnergyMixService {
     public List<DailyMixDto> getEnergyMix() {
         LocalDate from = LocalDate.now();
         LocalDate to = from.plusDays(2);
-        List<GenerationInterval> intervals = carbonIntensityClient.getEnergyForNextDays(from, to);
+        List<GenerationInterval> intervals = intervalsWithinRange(from, to);
 
         Map<LocalDate, List<GenerationInterval>> byDate = intervals.stream()
                 .collect(Collectors.groupingBy(this::extractDate, TreeMap::new, Collectors.toList()));
@@ -40,10 +40,11 @@ public class EnergyMixService {
     }
 
     public ChargingOptimalWindowDto getChargingOptimalWindow(int hours) {
-        int windowSize = hours * 2;
+        int intervalsPerHour=2;
+        int windowSize = hours * intervalsPerHour;
         LocalDate from = LocalDate.now();
         LocalDate to = from.plusDays(1);
-        List<GenerationInterval> intervals = carbonIntensityClient.getEnergyForNextDays(from, to);
+        List<GenerationInterval> intervals = intervalsWithinRange(from, to);
         List<Double> cleanPercByInterval = intervals.stream()
                 .map(interval -> dailyMixMapper.cleanPercentage(interval.generationMix()))
                 .toList();
@@ -80,5 +81,17 @@ public class EnergyMixService {
 
     private LocalDate extractDate(GenerationInterval interval) {
         return LocalDateTime.parse(interval.from(), FORMATTER).toLocalDate();
+    }
+
+    // Carbon Intensity API nie honoruje ściśle granic zapytania — dla from=2026-07-03
+    // potrafi zwrócić dodatkowy interwał z 2026-07-02T23:30Z, więc trzeba odfiltrować
+    // wszystko poza żądanym zakresem dat samodzielnie.
+    private List<GenerationInterval> intervalsWithinRange(LocalDate from, LocalDate to) {
+        return carbonIntensityClient.getEnergyForNextDays(from, to).stream()
+                .filter(interval -> {
+                    LocalDate date = extractDate(interval);
+                    return !date.isBefore(from) && !date.isAfter(to);
+                })
+                .toList();
     }
 }

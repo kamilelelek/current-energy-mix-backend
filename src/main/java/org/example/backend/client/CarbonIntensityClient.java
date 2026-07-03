@@ -2,6 +2,7 @@ package org.example.backend.client;
 
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -26,10 +27,19 @@ public class CarbonIntensityClient {
     public List<GenerationInterval> getEnergyForNextDays(LocalDate from, LocalDate to) {
         String fromParam = from.atStartOfDay().format(FORMATTER);
         String toParam = to.atTime(23, 30).format(FORMATTER);
-        CarbonIntensityResponse response = restClient.get()
-                .uri("/generation/"+fromParam+"/"+toParam)
-                .retrieve()
-                .body(CarbonIntensityResponse.class);
+        CarbonIntensityResponse response;
+        try {
+            response = restClient.get()
+                    .uri("/generation/" + fromParam + "/" + toParam)
+                    .retrieve()
+                    .body(CarbonIntensityResponse.class);
+        } catch (RestClientException e) {
+            throw new ExternalApiException("Nie udało się pobrać danych z Carbon Intensity API", e);
+        }
+
+        if (response == null || response.data() == null) {
+            throw new ExternalApiException("Carbon Intensity API zwróciło pustą odpowiedź");
+        }
         return response.data();
     }
 
