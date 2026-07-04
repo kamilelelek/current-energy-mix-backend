@@ -40,23 +40,27 @@ public class EnergyMixService {
     }
 
     public ChargingOptimalWindowDto getChargingOptimalWindow(int hours) {
-        int intervalsPerHour=2;
+        int intervalsPerHour = 2;
         int windowSize = hours * intervalsPerHour;
         LocalDate from = LocalDate.now();
         LocalDate to = from.plusDays(1);
         List<GenerationInterval> intervals = intervalsWithinRange(from, to);
-        List<Double> cleanPercByInterval = intervals.stream()
+        List<GenerationInterval> futureIntervals = intervals.stream()
+                .filter(interval -> LocalDateTime.parse(interval.from(), FORMATTER).isAfter(LocalDateTime.now()))
+                .toList();
+        List<Double> cleanPercByInterval = futureIntervals.stream()
                 .map(interval -> dailyMixMapper.cleanPercentage(interval.generationMix()))
                 .toList();
 
         BestWindow best = findBestWindow(cleanPercByInterval, windowSize);
 
-        LocalDateTime start = LocalDateTime.parse(intervals.get(best.startIndex()).from(), FORMATTER);
-        LocalDateTime end = LocalDateTime.parse(intervals.get(best.startIndex() + windowSize - 1).to(), FORMATTER);
+        LocalDateTime start = LocalDateTime.parse(futureIntervals.get(best.startIndex()).from(), FORMATTER);
+        LocalDateTime end = LocalDateTime.parse(futureIntervals.get(best.startIndex() + windowSize - 1).to(), FORMATTER);
         return new ChargingOptimalWindowDto(start, end, best.averageCleanPercent());
     }
 
-    private record BestWindow(int startIndex, double averageCleanPercent) {}
+    private record BestWindow(int startIndex, double averageCleanPercent) {
+    }
 
     private BestWindow findBestWindow(List<Double> cleanPerc, int windowSize) {
         int bestStart = 0;
@@ -83,9 +87,6 @@ public class EnergyMixService {
         return LocalDateTime.parse(interval.from(), FORMATTER).toLocalDate();
     }
 
-    // Carbon Intensity API nie honoruje ściśle granic zapytania — dla from=2026-07-03
-    // potrafi zwrócić dodatkowy interwał z 2026-07-02T23:30Z, więc trzeba odfiltrować
-    // wszystko poza żądanym zakresem dat samodzielnie.
     private List<GenerationInterval> intervalsWithinRange(LocalDate from, LocalDate to) {
         return carbonIntensityClient.getEnergyForNextDays(from, to).stream()
                 .filter(interval -> {
